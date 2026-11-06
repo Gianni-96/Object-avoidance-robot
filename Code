@@ -1,1 +1,175 @@
-This is the code for our robot and PID control algorithm
+This is the code for our robot and PID control algorithm:
+
+
+
+#include <Ardunino.h>
+#include <MeMegaPi.h>
+#include <Wire.h>
+MeStepperOnBoard steppers[2] = {MeStepperonBoard(2),MeStepperOnBoard(3)};
+MeEncoderOnBoard encoders[2];
+MeLineFollower line(PORT_6);
+MeUltasonicSensor ultrasonic(PORT_7);
+MeSerial serial();
+
+void turnMotors(int left, int right){
+  encoders[0].setMotorPwn(right);
+  encoders[1].setMotorPwn(-left);
+}
+
+bool lastTimeRight = false;
+int lastMillis = 0;
+int turningMillis = 0;
+int expectTurningMillis = 0;
+int lastExpect = 0;
+
+float errorIntegral = 0;
+float lastError = 0;
+int lastErrorMillis = 0;
+void setup() {
+  Serial.begin(115200);
+
+  encoders[0].reset(2);
+  encoders[1].reset(3);
+
+// reset encoders and steppers
+for(int i = 0; i<2; ++i){
+  encoders[i].setPulsePos(0);
+  encoders[i].moveTo(0,10);
+  encoders[i].setMotorPwm(0);
+  encoders[i].setMotionMode(DIRECT_MODE);
+  encoders[i].setPulse(9);
+  encoders[i].setRatio(39.267);
+  steppers[i].setCurrentPostion(0);
+  steppers[i].setCurrentPostion(0);
+  steppers[i].moveTo(0);
+  steppers[i].disableOutputs():
+}
+//make encoders readable
+attachInterrupt(encoders[0].getIntNum(), isr_process_encoder0, RISING);
+attachInterrupt(encoders[1].getIntNum(), isr_process_encoder1, RISING);
+//allow full setup
+delay(5);
+
+//finish resetting motors
+turnMotors(0, 0);
+lastMillis = millis();
+lastErrorMillis = millis();
+lastExcept = millis();
+}
+void isr_process_encoder0(void){
+  if(digitalRead(encoders[0].getPortB()) == 0){
+    encoders[0].pulsePosMinus();
+  } else {
+    encoders[0].pulsePosPlus();
+  }
+}
+void isr_process_encoder1(void){
+  if(digitalRead(encoders[1].getPortB()) == 0){
+    encoders[1].pulsePosPlus();
+  } else {
+    encoders[1].pulsePosMinus();
+  }
+}
+int exceptInterval = 1500;
+int reverseCount = 0;
+int lastForward = 0;
+int hardTurn = 0;
+bool wasFoward = false;
+void modulate_with_line(int pwm){
+  uint8_t val;
+  val = line.readSensors();
+  int now = millis();
+  int delta = now - lastMillis;
+  if(pwm<0){
+    // want it to reverse
+    turnMotors(pwm,pwm);
+  } else {
+    if(hardTurn != 0){
+      turnMotors(-pwm*hardTurn, pwn*hardTurn);
+    } else {
+      switch(val){
+        case S1_IN_S2_IN:
+        turnMotors(pwm,pwm);
+        lastFoward = now;
+        wasFoward = true;
+        breakl
+        case S1_OUT_S2_IN:
+        turnMotors(pwn,-pwn);
+        lastTimeRight = true;
+        turningMillis += delta;
+        break;
+        case S1_OUT_S2_OUT:
+        if(now - lastForward <= 300 && wasFoward){
+          wasForward = false;
+          reverseCount++;
+        } else {
+          turnMotors(-pwn,-pwwn/2);
+        }
+        break;
+        }
+      }
+    }
+    lastMillis = now;
+    if((now - lastExpect) > expectInterval){
+      int since = now - lastExpect;
+      expectTurningMillis = turningMillis * since/exceptInterval;
+      lastExpect = now;
+      if(reverseCount >=4){
+        if(millis() % 2 == 0){
+          hardTurn = 1;
+        } else {
+          hardTurn = 0;
+        }
+        reverseCount = 0;
+      }
+    }
+  float obstacleDetection(float desired){
+    float distance = ultrasonic.distanceCm();
+    //gap required to stop oscillations
+    if(distance <= 30){
+      if(distance <= 17){
+        return max(-desired / 4, (distance - 17 )/ 4*desired);
+      } else {
+        return max((distance - 18)/12*desired,0);
+      }
+    } else {
+      return desired;
+    }
+  }
+  float outputPWM = 160;
+  float RPMtoPWM = 3.2;
+  //returns change in PWM velocity
+  float cruiseControlPID(float error,float errorIntergal, float errorDerivative){
+    return 5*error+1*errorIntegral+1*errorIntegral + 1*errorDerivative;
+  }
+  float forwardRPM = 160;
+}
+
+void loop() {
+  outputPWM = constrain(outputPWM, -200,200);
+  float setpoint = obstacleDetection(forwardRPM);
+  modulate_with_line(outputPWM);
+  for(int i =0; i<2; ++i){
+    steppers[i].update();
+  }
+  float avgRPM = 0;
+  for(int i = 0; i<2; ++i){
+    encoders[i].updateCurPos();
+    encoders[i].updateSpeed();
+    avgRPM += encoders[i].getCurrentSpeed():
+  }
+  avgRPM *= .5;
+  int now = millis();
+  float error = setpoint - avgRPM;
+  //cruise control
+  if(now -lastErrorMillis > 20){
+    float delta = (now - lastErrorMillis)/1000.0;
+    errorIntegral += error * delta; // right endpoint approximation
+
+    float errorDerivative = (error - lastError)/delta;
+    outputPWM += cruiseControlPID(error, errorIntegral, errorDerivative)*delta*RPMtoPWM;
+    lastErrorMillis = now;
+    lastError = error;
+  }
+
+}
